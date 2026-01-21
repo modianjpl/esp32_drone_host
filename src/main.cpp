@@ -11,9 +11,6 @@
 
 */
 
-// 全局变量
-bool is_pairing = false;        // 配对模式标志
-
 esp_now_peer_info_t peerInfo;   // esp-now实体信息
 
 uint8_t send_buf[260];          // 发送缓冲区
