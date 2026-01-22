@@ -53,7 +53,7 @@ void OnDataRecv(const uint8_t *mac_addr, const uint8_t *data, int len){
     //  处理4字节配对请求
     if (len == 4 && data[0] == 0xAA && data[1] == 0x55) {
         // 验证校验和
-        Serial.println("");
+        Serial.println("收到4字节段");
         uint8_t checksum = data[0] + data[1] + data[2];
         uint8_t expected_checksum = ~checksum;
         
@@ -201,6 +201,22 @@ void sendPairingRequest() {
     pairing_packet[3] = ~checksum;  // 取反校验
     
     // 发送广播
+    esp_now_peer_info_t peer;
+    memset(&peer, 0, sizeof(peer));  // 重要：清空结构体
+    memcpy(peer.peer_addr, broadcast_mac, 6);
+    peer.channel = 0;
+    peer.encrypt = false;
+    
+    // 删除可能存在的对端
+    esp_now_del_peer(broadcast_mac);
+    
+    // 添加对端
+    if(esp_now_add_peer(&peer) != ESP_OK) {
+        Serial.println("错误：无法添加广播对端");
+        return;
+    }
+
+
     esp_now_send(broadcast_mac, pairing_packet, sizeof(pairing_packet));
 
     Serial.println("发送配对请求");
