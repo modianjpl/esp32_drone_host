@@ -37,7 +37,7 @@ class UsartProtocol {
         void clear();
 
     public:
-        static uint8_t pack(const uint8_t *pld, uint8_t len,
+        static uint8_t pack(uint8_t address, const uint8_t *pld, uint8_t len,
             uint8_t *outBuf, uint8_t buf_len = 0);
 
 };

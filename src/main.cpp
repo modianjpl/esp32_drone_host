@@ -11,10 +11,24 @@
 
 */
 
+// ==================== 前置声明 ====================
+void OnDataRecv(const uint8_t *mac_addr, const uint8_t *data, int len);
+void OnDataSent(const uint8_t *mac_addr, esp_now_send_status_t status);
+void processWp(uint8_t seq, uint8_t flag, const uint8_t *pld, uint16_t len);
+void handlePairingRequest(const uint8_t *requester_mac);
+void handlePairingResponse(const uint8_t *responder_mac);
+void printMac(const uint8_t *mac);
+void addDeviceToESPNow(const uint8_t *mac);
+void sendDeviceListToSerial();
+void sendPairingRequest();
+void sendPairingResponse(const uint8_t *target_mac);
+
+
 esp_now_peer_info_t peerInfo;   // esp-now实体信息
 
 uint8_t send_buf[260];          // 发送缓冲区
 
+uint8_t last_received_mac[6];
 
 // 创建Address别名
 typedef uint8_t Address[6];
@@ -39,6 +53,7 @@ void OnDataRecv(const uint8_t *mac_addr, const uint8_t *data, int len){
     //  处理4字节配对请求
     if (len == 4 && data[0] == 0xAA && data[1] == 0x55) {
         // 验证校验和
+        Serial.println("");
         uint8_t checksum = data[0] + data[1] + data[2];
         uint8_t expected_checksum = ~checksum;
         
@@ -58,6 +73,9 @@ void OnDataRecv(const uint8_t *mac_addr, const uint8_t *data, int len){
     }
 
     else {
+      // 保存当前数据包的MAC地址
+      memcpy(last_received_mac, mac_addr, 6);
+
       for (int i = 0; i < len; i++){
         wireless_parser.feed(data[i]);
       }
@@ -70,7 +88,6 @@ void OnDataSent(const uint8_t *mac_addr, esp_now_send_status_t status){
 
 
 
-
 void processWp(uint8_t seq, uint8_t flag, const uint8_t *pld, uint16_t len){
   /*Serial.print("seq:");
   Serial.println(seq);
@@ -79,7 +96,16 @@ void processWp(uint8_t seq, uint8_t flag, const uint8_t *pld, uint16_t len){
   Serial.println("pld:");
   for (uint16_t i = 0; i< len; ++i) Serial.print(pld[i]);
   Serial.println("\n");*/
-  uint8_t l = usart_parser.pack(pld, len, send_buf, 250);
+  uint8_t address = 0; 
+  // 查找发送者位号
+  for (int i = 0; i < device_count; i++) {
+      if (memcmp(device_list[i], last_received_mac, 6) == 0) {
+          address = i + 1;  // 1-based位号
+          break;
+      }
+  }
+
+  uint8_t l = usart_parser.pack(address, pld, len, send_buf, 250);
   Serial.write(send_buf, l);
 }
 
@@ -128,14 +154,37 @@ void addDeviceToESPNow(const uint8_t *mac) {
     // 3. 添加到本地列表
     memcpy(device_list[device_count], mac, 6);
     memcpy(peerInfo.peer_addr, device_list[device_count], 6);
+
     if (esp_now_add_peer(&peerInfo) != ESP_OK){
       Serial.println("Failed to add peer");
       return;
     }
     device_count++;
     
-    Serial.printf("添加一个mac到本地列表成功");
+    Serial.print("添加一个mac到本地列表成功, 当前设备数：");
+    Serial.println(device_count);
 
+    // 4. 发送设备列表到串口（位号用0表示这是设备列表）
+    sendDeviceListToSerial();
+}
+
+void sendDeviceListToSerial() {   
+    // 准备数据：将所有设备的MAC地址打包
+    uint8_t device_data[MAX_DEVICES * 6 + 1];  // 每个设备6字节 + 设备数量1字节
+    uint8_t data_len = 0;
+    
+    // 第一个字节：设备数量
+    device_data[data_len++] = device_count;
+    
+    // 后续字节：所有设备的MAC地址
+    for (int i = 0; i < device_count; i++) {
+        memcpy(&device_data[data_len], device_list[i], 6);
+        data_len += 6;
+    }
+    
+    // 使用位号0打包设备列表数据
+    uint8_t l = usart_parser.pack(0, device_data, data_len, send_buf, 250);
+    Serial.write(send_buf, l);
 }
 
 // ==================== 配对协议函数 ====================
